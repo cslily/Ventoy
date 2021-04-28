@@ -23,13 +23,29 @@ if is_ventoy_hook_finished; then
     exit 0
 fi
 
-vtlog "##### INOTIFYD: $2/$3 is created ..."
-
 VTPATH_OLD=$PATH; PATH=$BUSYBOX_PATH:$VTOY_PATH/tool:$PATH
 
 if is_inotify_ventoy_part $3; then
+
+    vtlog "##### INOTIFYD: $2/$3 is created (YES) ..."
+
+    vtGenRulFile='/etc/udev/rules.d/99-live-squash.rules'
+    if [ -e $vtGenRulFile ] && $GREP -q dmsquash $vtGenRulFile; then
+        vtScript=$($GREP -m1 'RUN.=' $vtGenRulFile | $AWK -F'RUN.=' '{print $2}' | $SED 's/"\(.*\)".*/\1/')
+        vtlog "vtScript=$vtScript"
+        $vtScript
+    else
+        vtlog "$vtGenRulFile not exist..."
+    fi
+
     vtlog "find ventoy partition ..."
-    $BUSYBOX_PATH/sh $VTOY_PATH/hook/default/udev_disk_hook.sh $3 noreplace
+    
+    vtReplaceOpt=noreplace
+    if [ -f /lib/dracut/hooks/pre-pivot/99-ventoy-repo.sh ]; then
+        vtReplaceOpt=""
+    fi
+    
+    $BUSYBOX_PATH/sh $VTOY_PATH/hook/default/udev_disk_hook.sh $3 $vtReplaceOpt
     
     blkdev_num=$($VTOY_PATH/tool/dmsetup ls | grep ventoy | sed 's/.*(\([0-9][0-9]*\),.*\([0-9][0-9]*\).*/\1:\2/')  
     vtDM=$(ventoy_find_dm_id ${blkdev_num})
@@ -41,11 +57,14 @@ if is_inotify_ventoy_part $3; then
         ventoy_swap_device /dev/dm-0 /dev/$vtDM
     fi
     
-    vtlog "set anaconda-diskroot ..."
-    /sbin/anaconda-diskroot /dev/dm-0    
-    #/sbin/initqueue --settled --onetime --name anaconda-diskroot anaconda-diskroot  /dev/dm-0
+    if [ -e /sbin/anaconda-diskroot ]; then
+        vtlog "set anaconda-diskroot ..."
+        /sbin/anaconda-diskroot /dev/dm-0    
+    fi
     
     set_ventoy_hook_finish
+else
+    vtlog "##### INOTIFYD: $2/$3 is created (NO) ..."
 fi
 
 PATH=$VTPATH_OLD
